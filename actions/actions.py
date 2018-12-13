@@ -57,7 +57,8 @@ def archive_data(args):
 ACTIONS = {
     "pause": pause,
     "resume": resume,
-    "archive-data": archive_data}
+    "archive-data": archive_data,
+     "get-capacity-inf": get-capacity-info,}
 
 
 def main(args):

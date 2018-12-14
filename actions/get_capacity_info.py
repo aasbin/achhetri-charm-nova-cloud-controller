@@ -18,6 +18,7 @@ _add_path(_root)
 import charmhelpers.core.hookenv as hookenv
 #import hooks.nova_cc_utils as ncc_utils
 import charmhelpers.contrib.openstack.keystone as keystone
+from charmhelpers.fetch import apt_install
 from charmhelpers.core.hookenv import (
     log,
     ERROR,
@@ -70,14 +71,35 @@ def get_apiversion_and_endpoint():
 def get_keystone_session(endpoint, api_version, context):
     av = context['api_version']
     hookenv.action_set({'get-capacity-info': endpoint})
-    from keystoneclient import session
     if api_version == 2:
-      from keystoneclient.auth.identity import v2
+      try:
+            from keystoneclient.auth.identity import v2
+            from keystoneclient import session
+      except ImportError:
+            if six.PY2:
+                apt_install(["python-keystoneclient"], fatal=True)
+            else:
+                apt_install(["python3-keystoneclient"], fatal=True)
+            from keystoneclient.auth.identity import v2
+            from keystoneclient import session
       auth = v2.Password(auth_url=endpoint, username=context['admin_user'], password=context['admin_password'], tenant_name=context['admin_tenant_name'])
     if api_version == 3:
-      from keystoneclient.auth.identity import v3
-      auth = v3.Password(project_name=context['admin_tenant_name'], project_domain_name='Default', auth_url=endpoint, username=context['admin_user'], password=context['admin_password'], user_domain_name='Default')
+      try:
+            from keystoneclient import session
+            from keystoneclient.auth.identity import v3
+      except ImportError:
+            if six.PY2:
+                apt_install(["python-keystoneclient"], fatal=True)
+            else:
+                apt_install(["python3-keystoneclient"], fatal=True)
+
+            from keystoneclient.auth import token_endpoint
+            from keystoneclient import session
+            from keystoneclient.auth.identity import v3
+      auth = v3.Password(project_name=context['admin_tenant_name'], project_domain_name='Default', auth_url=endpoint, username=context['admin_user'], password=context['admin_password'], user_domain_name=context['admin_domain_id'])
     return session.Session(auth=auth)
+
+
 def main():
    nova = get_apiversion_and_endpoint()
    capacityoutput = []
@@ -91,10 +113,10 @@ def main():
        totalinstances =  can_host_flavor(hypervisor, flavor, ram_allocation_ratio, cpu_allocation_ratio)
        totalinstances_per_flavor += totalinstances
        if not  hypervisor.hypervisor_hostname in capacityoutput:
-         capacityoutput += ['\n', hypervisor.hypervisor_hostname,':\n']
-       capacityoutput.append('\t can host {} instances of flavor {}\n'.format(totalinstances, flavor.name))
+         capacityoutput += [ hypervisor.hypervisor_hostname,' ']
+       capacityoutput.append('{}:  {} '.format(flavor.name, totalinstances))
 
-     flavorcapacityoutput.append('Total capacity of flavor {} is {} \n'.format(flavor.name,totalinstances_per_flavor))
+     flavorcapacityoutput.append('Total_capacity flavor {}:  {} \n'.format(flavor.name,totalinstances_per_flavor))
    flavorcapacityoutput += capacityoutput
    print(s.join(flavorcapacityoutput))
    hookenv.action_set({'get-capacity-info': s.join(flavorcapacityoutput)})

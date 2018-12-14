@@ -1,0 +1,9 @@
+results:
+  get-capacity-info: Total capacity of flavor m1.tiny is 22 \nTotal capacity of flavor
+    m1.small is 5 \nTotal capacity of flavor m1.medium is 2 \nTotal capacity of flavor
+    m1.large is 1 \nTotal capacity of flavor m1.xlarge is 0 \n\njuju-288fff-10:\n\t
+    can host 22 instances of flavor m1.tiny\n\t can host 5 instances of flavor m1.small\n\t
+    can host 2 instances of flavor m1.medium\n\t can host 1 instances of flavor m1.large\n\t
+    can host 0 instances of flavor m1.xlarge\n
+
+

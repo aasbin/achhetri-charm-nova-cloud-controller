@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+# SM: Add newline between shebang and docstring.
+"""
+# get_capacity_info.py
+
+Retrieves the capacity of all flavors.  # SM: What kind of capacity?
+
+Copyright 2018 Canonical Ltd
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+import os
+import sys
+# SM: Add newline between standard library and third party imports.
+from novaclient import client
+from keystoneauth1.exceptions.http import (
+    Unauthorized,  # SM: Although technically not necessary, indent these.
+    NotFound,
+    BadRequest,
+)
+import yaml
+# SM: Stick a newline between imports and assignments.
+_path = os.path.dirname(os.path.realpath(__file__))
+_root = os.path.abspath(os.path.join(_path, '..'))
+
+
+def _add_path(path):
+    if path not in sys.path:
+        sys.path.insert(1, path)
+
+# SM: Functions should be surrounded by 2 newlines.
+_add_path(_root)
+
+import charmhelpers.core.hookenv as hookenv
+from charmhelpers.fetch import apt_install
+from charmhelpers.contrib.openstack.context import IdentityServiceContext
+# SM: Newline between imports and assignment.
+config = hookenv.config()
+
+ram_allocation_ratio = config['ram-allocation-ratio']
+cpu_allocation_ratio = config['cpu-allocation-ratio']
+
+
+def can_host_flavor(hypervisor, flavor,
+                    ram_allocation_ratio, cpu_allocation_ratio):
+    """ function to calculate number of instances 
+    per flavor from a hypervisor """                # SM: <- What's with all
+    # these spaces?! :-) Also, This is obviously a function - saying so in your
+    # docstring is redundant. Lastly, closing triple double quotes go on a line
+    # by themselves if the docstring is longer than one line. Oh, and ideally,
+    # docstrings and comments should be complete sentences, with capital
+    # letters at the beginning and full stops at the end.
+    count = 0
+    free_mem = hypervisor.free_ram_mb * ram_allocation_ratio
+    free_vcpu = hypervisor.vcpus * cpu_allocation_ratio - hypervisor.vcpus_used
+    while True:  # SM: This is inefficient. Consider replacing this loop with
+        # the four lines below.
+        if free_mem >= flavor.ram and free_vcpu >= flavor.vcpus:
+            count += 1
+            free_mem -= flavor.ram
+            free_vcpu -= flavor.vcpus
+        else:
+            return count
+    # mem_count = free_mem // flavor.ram
+    # vcpu_count = free_vcpu // flavor.vcpus
+    # count = min(mem_count, vcpu_count)
+    # return count
+
+
+def get_novaapi():  # SM: Consider `get_nova_api`.
+    """ function to retrieve 
+    nova client session """  # SM: See notes on docstrings above.
+    context = IdentityServiceContext()()  # SM: What do the second set of
+    # parens do here?
+    try:
+        if int(context['api_version']) == 2:  # SM: These `if` statement blocks
+            # are very similar - could they be refactored?
+            api_version = 2
+            # SM: Consider using the string `format()` method here, rather than
+            # the old style `%`.
+            endpoint = '%s://%s:%s/v%s' % (context['service_protocol'],
+                                           context['service_host'],
+                                           context['service_port'],
+                                           float(context['api_version']))
+                                           # SM: You `float()` here, but not
+                                           # for v3, below. Is that
+                                           # intentional?
+        else:
+            api_version = 3  # SM: Is there a version 1? Could there be a
+            # version 4?
+            endpoint = '%s://%s:%s/v%s' % (context['service_protocol'],
+                                           context['service_host'],
+                                           context['service_port'],
+                                           context['api_version'])
+    except KeyError as e:
+        hookenv.action_fail(e.message)
+        hookenv.action_set(
+            {"error": "Did not receive the openstack-auth "
+             "parameters from identity context"}
+        )
+        sys.exit(1)
+    novaapi = client.Client(  # SM: Consider `nova_api`.
+        '2.2', session=get_auth_session(endpoint, api_version, context))
+    return novaapi   # SM: <- Spaces again!
+
+
+def get_auth_session(endpoint, api_version, context):
+    """ function to get keystone authentication 
+    session """  # SM: See notes on docstrings above.
+    if api_version == 2:
+        try:
+            from keystoneclient.auth.identity import v2
+            from keystoneauth1 import session
+        except ImportError:
+            apt_install(["python3-keystoneclient"], fatal=True)  # SM: Don't
+            # install packages automatically, error out and notify user that
+            # packages are required.
+            from keystoneclient.auth.identity import v2
+            from keystoneauth1 import session
+        auth = v2.Password(auth_url=endpoint, username=context['admin_user'],
+                           password=context['admin_password'],
+                           tenant_name=context['admin_tenant_name'])
+    if api_version == 3:
+        try:
+            from keystoneclient import session
+            from keystoneclient.auth.identity import v3
+        except ImportError:
+            apt_install(["python3-keystoneclient"], fatal=True)  # SM: See
+            # above.
+            from keystoneclient.auth import token_endpoint
+            from keystoneauth1 import session
+            from keystoneclient.auth.identity import v3
+        auth = v3.Password(auth_url=endpoint, username=context['admin_user'],
+                           password=context['admin_password'],
+                           user_domain_id=context['admin_domain_id'])
+    return session.Session(auth=auth)
+
+
+def main():
+    nova = get_novaapi()
+    try:
+        hypervisors = nova.hypervisors.list()
+        flavors = nova.flavors.list()
+    except (Unauthorized, NotFound, BadRequest)  as e:  # SM: <- Extra space!
+        msg = str(e)  # SM: Is `str()` necessary? Does `e` have a string
+        # representation?
+        hookenv.action_fail(msg)
+        hookenv.action_set({"error": " error from api {} ".format(msg)})
+        sys.exit(1)
+    output = {}
+    for flavor in flavors:
+        totalinstances_per_flavor = 0  # SM: Consider
+        # `total_instances_per_flavor`.
+        flavor_name = str(flavor.name)  # SM: Is `str()` necessary? Is
+        # `flavor.name` already a string?
+        for hypervisor in hypervisors:
+            hostname = str(hypervisor.hypervisor_hostname)  # SM: Is `str()`
+            # necessary?
+            totalinstances = can_host_flavor(hypervisor, flavor,
+                                             ram_allocation_ratio,
+                                             cpu_allocation_ratio)
+            totalinstances_per_flavor += totalinstances
+            if hostname not in output:
+                output.update({hostname: {}})  # SM: If you're only adding a
+                # single key/value pair to a dict, use a simple assignment:
+                # `output[hostname] = {}`. `update()` would be useful if you
+                # wanted to add multiple key/value pairs at the same time.
+            output[hostname].update({flavor_name: totalinstances})  # SM:
+            # Again, should be:
+            # `output[hostname][flavor_name] = totalinstances`.
+        if "Total_Capacity" not in output:
+            output.update({"Total_Capacity": {}})  # SM: Change to:
+            # `output["Total_Capacity"] = {}`.
+        output["Total_Capacity"].update(
+           {flavor_name: totalinstances_per_flavor})  # SM: Change to:
+           # `output["Total_Capacity"][flavor_name] = totalinstances_per_flavor`.
+    hookenv.action_set({'get-capacity-info': yaml.dump(output)})
+
+
+if __name__ == "__main__":  # SM: Don't forget the guard - you, or perhaps
+    # someone else, may want to import a function from this file at some point
+    # in the future.
+    main()
